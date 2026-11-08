@@ -314,7 +314,7 @@ class FlowBrowser:
             if not state.signed_in:
                 raise NotSignedInError(
                     "Flow redirected to Google sign-in: the session cookies are missing or "
-                    "expired. Export fresh cookies and update FLOW_COOKIES_FILE.")
+                    "expired. Export fresh cookies and update FLOW_COOKIES (or FLOW_COOKIES_FILE).")
             if state.at and (state.grecaptcha or not need_captcha):
                 return state
             if state.url.startswith("chrome-error://"):

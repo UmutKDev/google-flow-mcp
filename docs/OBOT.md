@@ -28,6 +28,17 @@ Bilgisayarında Google Chrome kurulu olmalı. Komut `~/.google-flow-mcp/cookies.
 
 Alternatif: Chrome'da Cookie-Editor eklentisiyle `flow.google.com` açıkken **Export → JSON** yap ve dosyaya kaydet. `cookies.txt` biçimi de kabul edilir.
 
+Obot'a eklemek için dosyayı tek satırlık base64 metnine çevir:
+
+```bash
+base64 -w0 cookies.json                         # Linux
+base64 -i cookies.json | tr -d '\n' | pbcopy    # macOS, panoya kopyalar
+```
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.json")) | Set-Clipboard
+```
+
 Dosyayı kontrol etmek için:
 
 ```bash
@@ -41,6 +52,8 @@ Bu dosya şifre gibidir: sahibi senin adına Google'a girebilir. Repoya koyma, p
 ### GitOps ile (önerilen)
 
 Obot'ta **MCP Servers → Sources** altında bu repoyu katalog kaynağı olarak ekle. Obot `obot/google-flow-mcp.yaml` dosyasını okuyup "Google Flow" girdisini oluşturur.
+
+Çerezleri dosya olarak bağlamak istersen (GitOps'ta `file: true` ya da Kubernetes Secret ile) `FLOW_COOKIES_FILE` değişkenini kullan. Sunucu ikisini de tanır; ikisi birden verilirse dosya kazanır.
 
 ### Elle
 
@@ -56,7 +69,7 @@ Yapılandırma alanları:
 
 | Anahtar | Tür | Not |
 | --- | --- | --- |
-| `FLOW_COOKIES_FILE` | Dosya, gerekli, gizli | 2. adımdaki çerez dosyası |
+| `FLOW_COOKIES` | Gerekli, gizli (Sensitive) | 2. adımdaki base64 metni. Ham JSON da olur |
 | `FLOW_PROJECT_ID` | İsteğe bağlı | Varsayılan Flow projesi. Boş kalırsa sunucu bir proje açar |
 | `FLOW_BUDGET_CREDITS` | İsteğe bağlı | Videoya harcanabilecek en fazla kredi (varsayılan 200, 0 videoyu kapatır) |
 | `FLOW_EXPECTED_ACCOUNT` | İsteğe bağlı | Beklenen Google e-postası |
@@ -66,7 +79,7 @@ Kaynak önerisi: istek 500m CPU ve 1Gi bellek, sınır 2 CPU ve 3Gi bellek. Chro
 ## 4. vMCP oluştur ve bağlan
 
 1. **vMCPs → Create vMCP** ile Google Flow girdisini sürükle.
-2. `FLOW_COOKIES_FILE` alanı için **Provided at connection** seç. Böylece her kullanıcı kendi hesabıyla bağlanır ve Obot her kullanıcıya ayrı bir pod açar. Tek bir ortak hesap kullanacaksan **Preconfigured** seç.
+2. `FLOW_COOKIES` alanı için **Provided at connection** seç. Böylece her kullanıcı kendi hesabıyla bağlanır ve Obot her kullanıcıya ayrı bir pod açar. Tek bir ortak hesap kullanacaksan **Preconfigured** seç.
 3. Bağlan. İlk çağrı olarak `flow_status` çalıştır. `signed_in: true` ve hesabın e-postasını görmelisin.
 
 ## 5. Çıkış (egress) izinleri

@@ -44,7 +44,7 @@ Açılan Chrome'da Google'a ve flow.google.com'a giriş yap. Komut `~/.google-fl
 
 ### 2a. Obot
 
-Adım adım anlatım: [docs/OBOT.md](docs/OBOT.md). Kısaca: bu repoyu Obot'a katalog kaynağı olarak ekle, `obot/google-flow-mcp.yaml` girdisi oluşur, çerez dosyasını `FLOW_COOKIES_FILE` alanına yükle.
+Adım adım anlatım: [docs/OBOT.md](docs/OBOT.md). Kısaca: bu repoyu Obot'a katalog kaynağı olarak ekle, `obot/google-flow-mcp.yaml` girdisi oluşur. Çerez dosyasını base64'e çevirip (`base64 -w0 cookies.json`) `FLOW_COOKIES` alanına yapıştır.
 
 ### 2b. Docker
 
@@ -91,8 +91,8 @@ En az kredi harcayan akış: önce ücretsiz resimle kareyi oturt, sonra yalnız
 
 | Değişken | Varsayılan | Açıklama |
 | --- | --- | --- |
-| `FLOW_COOKIES_FILE` | – | Çerez dosyasının yolu (Obot'ta dosya alanı) |
-| `FLOW_COOKIES` | – | Aynı içerik doğrudan ya da base64 olarak |
+| `FLOW_COOKIES_FILE` | – | Bağlanan çerez dosyasının yolu (Docker birimi, Kubernetes Secret) |
+| `FLOW_COOKIES` | – | Aynı içerik metin olarak: base64 (önerilen), JSON ya da cookies.txt. Obot için bunu kullan |
 | `FLOW_PROFILE_DIR` | – | Kalıcı Chrome profili (Docker birimi). Verilirse çerezlere gerek kalmaz |
 | `FLOW_PROJECT_ID` | – | Varsayılan Flow projesi |
 | `FLOW_BUDGET_CREDITS` | `200` | Videoya harcanabilecek en fazla kredi. `0` videoyu kapatır |

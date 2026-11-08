@@ -9,7 +9,7 @@ description: |
 
   Runs a real Google Chrome (headed, on a virtual display) inside the container because Flow
   only accepts reCAPTCHA tokens minted by a real browser. Each user connects with an export of
-  their own Google cookies; that value makes Obot run one pod per user.
+  their own Google cookies (FLOW_COOKIES); a per-user value makes Obot run one pod per user.
 repoURL: https://github.com/UmutKDev/google-flow-mcp
 metadata:
   categories: Media, Creative, AI
@@ -62,15 +62,15 @@ resources:
     memory: 3Gi
 
 env:
-  - key: FLOW_COOKIES_FILE
+  - key: FLOW_COOKIES
     name: Google cookies
     description: |
-      Cookie export of a browser signed in to flow.google.com. Create it with
-      `google-flow-mcp login` (Playwright storage_state JSON), or export it with the
-      Cookie-Editor extension (JSON) or as cookies.txt. Treat it like a password.
+      Cookie export of a browser signed in to flow.google.com, pasted as text. Base64 is
+      recommended (`base64 -w0 cookies.json`); raw JSON and cookies.txt also work. Create the
+      export with `google-flow-mcp login` or the Cookie-Editor extension (Export -> JSON).
+      Treat it like a password.
     required: true
     sensitive: true
-    file: true
   - key: FLOW_PROJECT_ID
     name: Default Flow project
     description: UUID from flow.google.com/project/<id>. Left empty, the server creates one.
