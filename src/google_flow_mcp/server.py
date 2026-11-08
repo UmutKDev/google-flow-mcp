@@ -95,6 +95,12 @@ def build_server(settings: Optional[Settings] = None) -> tuple[MCPServer, dict]:
                 "Google itself does not accept these cookies any more: the session was signed "
                 "out or rotated on the computer it came from. Export a fresh session with "
                 "`google-flow-mcp login` (it makes a separate session) and do not sign out of it.")
+        elif "accounts.google.com" in leads and "/signin/identifier" in leads:
+            d["verdict"] = (
+                "Google does not consider this browser signed in at all: Flow's button opens the "
+                "plain 'Sign in - Email or phone' page. The exported cookies are no longer valid "
+                "(signed out, rotated by the source browser, or bound to that device). Export a "
+                "fresh, separate session with `google-flow-mcp login` and do not sign out of it.")
         elif "accounts.google.com" in leads and ("confirm" in leads or "challenge" in leads
                                                  or "signin" in leads):
             d["verdict"] = (
