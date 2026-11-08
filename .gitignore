@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+cookies*.json
+cookies.txt
+.ca.crt
