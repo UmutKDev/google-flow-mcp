@@ -82,6 +82,33 @@ def build_server(settings: Optional[Settings] = None) -> tuple[MCPServer, dict]:
         log.exception("unexpected tool failure")
         return ToolError(f"{type(exc).__name__}: {exc}")
 
+    async def _diagnose_session() -> dict[str, Any]:
+        """Explain a refused session in plain words; spends nothing."""
+        try:
+            d = await browser.diagnose_landing()
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)[:200]}
+        accounts = d.get("google_accounts")
+        leads = str(d.get("button_leads_to") or "")
+        if accounts == []:
+            d["verdict"] = (
+                "Google itself does not accept these cookies any more: the session was signed "
+                "out or rotated on the computer it came from. Export a fresh session with "
+                "`google-flow-mcp login` (it makes a separate session) and do not sign out of it.")
+        elif "accounts.google.com" in leads and ("confirm" in leads or "challenge" in leads
+                                                 or "signin" in leads):
+            d["verdict"] = (
+                "Google accepts the cookies but asks this account to confirm its identity before "
+                "Flow opens, most likely because the session is now used from a different IP "
+                "address. Open flow.google.com once on your own computer and pass the check, "
+                "then export fresh cookies. If it keeps happening, run the server from your own "
+                "network (local Docker/stdio, or FLOW_BROWSER_PROXY through a home connection).")
+        elif accounts:
+            d["verdict"] = (
+                "Google accepts the cookies, but Flow keeps this session on its public page. "
+                "Check that this account can open flow.google.com in a normal browser.")
+        return d
+
     async def inline_image(url: str) -> Optional[ImageContent]:
         try:
             data, mime = await browser.fetch_bytes(url, settings.inline_image_max_bytes)
@@ -138,7 +165,10 @@ def build_server(settings: Optional[Settings] = None) -> tuple[MCPServer, dict]:
                     state.email.lower() != settings.expected_account.lower():
                 info["warning"] = f"signed in as {state.email}, expected {settings.expected_account}"
         except Exception as exc:  # noqa: BLE001
-            info.update({"signed_in": False, "error": str(fail(exc))})
+            info.update({"signed_in": False, "error": str(fail(exc)),
+                         "cookies": browser.cookie_summary})
+            if isinstance(exc, NotSignedInError) and browser.running:
+                info["diagnosis"] = await _diagnose_session()
         return [_text(info)]
 
     @mcp.tool(annotations=FREE)

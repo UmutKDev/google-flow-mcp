@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 import time
 from dataclasses import dataclass
@@ -31,6 +32,22 @@ class BrowserError(RuntimeError):
 
 class NotSignedInError(BrowserError):
     """Flow sent us to the Google sign-in page: the cookies are missing or stale."""
+
+
+class FlowLandingError(NotSignedInError):
+    """Flow parked the tab on its public ``/about`` page instead of opening the app."""
+
+
+#: Answers with the accounts the cookie jar is signed in to, without any UI.
+_LIST_ACCOUNTS_URL = ("https://accounts.google.com/ListAccounts"
+                      "?gpsia=1&source=ChromiumBrowser&json=standard")
+
+_ABOUT_HELP = (
+    "Flow sent the browser to its public page (flow.google.com/about) instead of opening the "
+    "app. The Google cookies were loaded, but Flow did not accept this session. Known causes: "
+    "Google wants this account to 'Confirm it's you' again, the exported session was signed "
+    "out or rotated on the computer it came from, or Google does not trust the session from "
+    "this server's IP address. Run flow_status for a diagnosis.")
 
 
 _LAUNCH_ARGS = [
@@ -170,6 +187,24 @@ class PageState:
     grecaptcha: bool
     project: Optional[str]
     email: Optional[str]
+    landing: Optional[str] = None
+
+
+def landing_kind(url: str) -> Optional[str]:
+    """``"signin"`` for Google's auth pages, ``"public"`` for Flow's /about page."""
+    from urllib.parse import urlsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    host = (parts.hostname or "").lower()
+    path = parts.path.rstrip("/")
+    if host == "accounts.google.com" or path.endswith("/signin"):
+        return "signin"
+    if host == "flow.google.com" and path == "/about":
+        return "public"
+    return None
 
 
 def find_chrome(explicit: Optional[str]) -> Optional[str]:
@@ -295,9 +330,9 @@ class FlowBrowser:
             raw = {"url": page.url, "at": False, "grecaptcha": False, "project": None, "email": None,
                    "host": ""}
         url = raw.get("url") or page.url or ""
-        signed_in = "accounts.google.com" not in url and "/signin" not in url
-        return PageState(url, signed_in, bool(raw.get("at")), bool(raw.get("grecaptcha")),
-                         raw.get("project"), raw.get("email"))
+        landing = landing_kind(url)
+        return PageState(url, landing is None, bool(raw.get("at")), bool(raw.get("grecaptcha")),
+                         raw.get("project"), raw.get("email"), landing)
 
     async def _goto(self, url: str) -> None:
         try:
@@ -306,16 +341,25 @@ class FlowBrowser:
         except Exception as exc:  # noqa: BLE001 - the page is often usable anyway
             log.warning("navigation to %s: %s", url, exc)
 
-    async def _wait_ready(self, need_captcha: bool, timeout_s: float = 60) -> PageState:
+    async def _wait_ready(self, need_captcha: bool, timeout_s: float = 60,
+                          settle: bool = False) -> PageState:
         deadline = time.monotonic() + timeout_s
         state = await self._state()
         while time.monotonic() < deadline:
             state = await self._state()
+            if state.landing == "public":
+                raise FlowLandingError(_ABOUT_HELP)
             if not state.signed_in:
                 raise NotSignedInError(
                     "Flow redirected to Google sign-in: the session cookies are missing or "
                     "expired. Export fresh cookies and update FLOW_COOKIES (or FLOW_COOKIES_FILE).")
             if state.at and (state.grecaptcha or not need_captcha):
+                if settle:
+                    # Flow decides client-side, a few hundred ms after load, whether to
+                    # hop to /about; a page that looked ready may still leave.
+                    settle = False
+                    await asyncio.sleep(1.5)
+                    continue
                 return state
             if state.url.startswith("chrome-error://"):
                 raise BrowserError(
@@ -326,21 +370,73 @@ class FlowBrowser:
         raise BrowserError(
             f"Flow page never became ready (at={state.at}, recaptcha={state.grecaptcha}, url={state.url})")
 
-    async def ensure(self, project_id: Optional[str] = None, need_captcha: bool = False) -> PageState:
+    async def ensure(self, project_id: Optional[str] = None, need_captcha: bool = False,
+                     timeout_s: float = 60) -> PageState:
         """A ready Flow tab: on the project page when a project is given (the
         only view that loads reCAPTCHA and the right ``source-path``)."""
         await self.start()
         state = await self._state()
+        navigated = False
         if project_id:
             if state.project != project_id or not state.at or (need_captcha and not state.grecaptcha):
                 await self._goto(p.PROJECT_URL.format(pid=project_id))
-        elif "flow.google.com" not in state.url or not state.at:
+                navigated = True
+        elif "flow.google.com" not in state.url or not state.at or state.landing:
             await self._goto(p.FLOW_HOME)
-        return await self._wait_ready(need_captcha=need_captcha)
+            navigated = True
+        return await self._wait_ready(need_captcha=need_captcha, timeout_s=timeout_s,
+                                      settle=navigated)
 
-    async def status(self) -> PageState:
+    async def status(self, timeout_s: float = 25) -> PageState:
         async with self._lock:
-            return await self.ensure()
+            return await self.ensure(timeout_s=timeout_s)
+
+    async def google_accounts(self) -> Optional[list[str]]:
+        """Accounts Google itself considers signed in for this cookie jar (no UI).
+
+        ``[]`` means the cookies no longer sign in to Google at all; ``None``
+        means the check could not run."""
+        await self.start()
+        try:
+            resp = await self._context.request.get(_LIST_ACCOUNTS_URL, timeout=15_000)
+            text = await resp.text()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("ListAccounts failed: %s", exc)
+            return None
+        if resp.status != 200:
+            return None
+        return sorted(set(re.findall(r'"([^"@\s]+@[^"\s]+\.[^"\s]+)"', text)))
+
+    async def diagnose_landing(self) -> dict[str, Any]:
+        """Why Flow shows /about: ask Google who is signed in, then press Flow's own
+        main button once and report where it leads (nothing is created or spent)."""
+        async with self._lock:
+            out: dict[str, Any] = {"google_accounts": await self.google_accounts()}
+            page = self._page
+            try:
+                await self._goto(p.FLOW_HOME)
+                await asyncio.sleep(2.5)
+                if landing_kind(page.url) != "public":
+                    out["landing_after_reload"] = page.url
+                    return out
+                button = page.get_by_role("button", name=re.compile("Create with", re.I))
+                if not await button.count():
+                    button = page.get_by_role("link", name=re.compile("Create with", re.I))
+                await button.first.click(timeout=8_000)
+                for _ in range(16):
+                    await asyncio.sleep(0.5)
+                    if landing_kind(page.url) != "public":
+                        break
+                await asyncio.sleep(1.5)
+                out["button_leads_to"] = page.url
+                try:
+                    body = (await page.inner_text("body", timeout=3_000))[:600]
+                except Exception:  # noqa: BLE001
+                    body = ""
+                out["page_text"] = " ".join(body.split())[:300]
+            except Exception as exc:  # noqa: BLE001
+                out["click_error"] = str(exc)[:200]
+            return out
 
     # ── RPC ─────────────────────────────────────────────────────────────
     async def rpc(self, rpcid: str, freq: str, *, project_id: Optional[str] = None,
