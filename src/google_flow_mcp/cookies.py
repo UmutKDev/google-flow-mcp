@@ -151,5 +151,6 @@ def summarise(cookies: list[dict]) -> dict:
     return {
         "count": len(cookies),
         "domains": sorted({c["domain"].lstrip(".") for c in cookies})[:12],
+        "names": sorted({c["name"] for c in cookies})[:60],
         "session_cookie_expires_in_days": round((soonest - now) / 86400, 1) if soonest else None,
     }

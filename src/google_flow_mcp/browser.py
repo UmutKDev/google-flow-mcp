@@ -404,6 +404,7 @@ class FlowBrowser:
             log.warning("ListAccounts failed: %s", exc)
             return None
         if resp.status != 200:
+            log.warning("ListAccounts answered HTTP %s", resp.status)
             return None
         return sorted(set(re.findall(r'"([^"@\s]+@[^"\s]+\.[^"\s]+)"', text)))
 
