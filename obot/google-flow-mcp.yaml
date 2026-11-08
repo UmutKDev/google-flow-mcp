@@ -1,0 +1,93 @@
+# Obot catalog entry (GitOps). Add this repository as a catalog source in Obot,
+# or create the entry by hand with the same values (see docs/OBOT.md).
+entryKey: google-flow
+name: Google Flow
+description: |
+  Generate images (Nano Banana) and videos (Veo 3.1, Omni Flash) on Google Flow with your
+  own Google account. Character-consistent references, image editing, upscaling, first/last
+  frame and reference-to-video, multi-shot storyboards, background jobs and a hard credit budget.
+
+  Runs a real Google Chrome (headed, on a virtual display) inside the container because Flow
+  only accepts reCAPTCHA tokens minted by a real browser. Each user connects with an export of
+  their own Google cookies (FLOW_COOKIES); a per-user value makes Obot run one pod per user.
+repoURL: https://github.com/UmutKDev/google-flow-mcp
+metadata:
+  categories: Media, Creative, AI
+  unsupportedTools: flow_screenshot,flow_restart_browser
+minObotVersion: v0.26.0
+
+toolPreview:
+  - name: flow_generate_image
+    description: Text/image to image with Nano Banana. Free on Flow.
+    params:
+      prompt: What to draw
+      reference_images: Media ids or image URLs that keep a character consistent (optional)
+      edit_image: An image to edit (optional)
+  - name: flow_generate_video
+    description: Omni Flash / Veo 3.1 video. Spends credits; needs confirm=true.
+    params:
+      prompt: Motion, camera, sound and dialogue
+      mode: text | frame | first_last | references
+  - name: flow_storyboard
+    description: One consistent still per shot, optionally animated.
+    params:
+      shots: Shot prompts in order
+  - name: flow_wait
+    description: Collect a background job.
+    params:
+      job_id: The id a generate call returned
+
+runtime: containerized
+containerizedConfig:
+  image: ghcr.io/umutkdev/google-flow-mcp:latest
+  port: 8080
+  path: /mcp
+  egressDomains:
+    - flow.google.com
+    - "*.google.com"
+    - "*.gstatic.com"
+    - "*.googleapis.com"
+    - "*.googleusercontent.com"
+    - flow-content.google
+    - "*.flow-content.google"
+    - labs.google
+    - www.recaptcha.net
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 3Gi
+
+env:
+  - key: FLOW_COOKIES
+    name: Google cookies
+    description: |
+      Cookie export of a browser signed in to flow.google.com, pasted as text. Base64 is
+      recommended (`base64 -w0 cookies.json`); raw JSON and cookies.txt also work. Create the
+      export with `google-flow-mcp login` or the Cookie-Editor extension (Export -> JSON).
+      Treat it like a password.
+    required: true
+    sensitive: true
+  - key: FLOW_PROJECT_ID
+    name: Default Flow project
+    description: UUID from flow.google.com/project/<id>. Left empty, the server creates one.
+    required: false
+    sensitive: false
+  - key: FLOW_BUDGET_CREDITS
+    name: Credit budget
+    description: Maximum credits this server may spend on video before refusing (default 200, 0 disables video).
+    required: false
+    sensitive: false
+  - key: FLOW_EXPECTED_ACCOUNT
+    name: Expected Google account
+    description: Optional email; flow_status warns when the session belongs to someone else.
+    required: false
+    sensitive: false
+  - key: FLOW_DEFAULT_IMAGE_MODEL
+    name: Default image model
+    description: NANO_BANANA_PRO (default), NANO_BANANA_2 or NANO_BANANA_2_LITE.
+    required: false
+    sensitive: false
